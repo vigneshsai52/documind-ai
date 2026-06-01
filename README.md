@@ -86,6 +86,7 @@ AI cost management	Used Groq's free tier instead of expensive OpenAI
 Structured output	Prompt engineering for consistent analysis format
 Multi-format support	Unified text extraction for PDF, DOCX, TXT
 CORS deployment	Configured Railway/Vercel for cross-origin requests
+```
 📝 License
 MIT License — free to use and modify.
 Built with ❤️ to help people understand what they sign
