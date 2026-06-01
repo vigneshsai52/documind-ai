@@ -2,7 +2,7 @@
 
 **AI-powered contract analyzer.** Upload any contract (PDF, DOCX, DOC, TXT) and get instant analysis of key terms, risky clauses, and a plain-English summary.
 
-🚀 **Live Demo:** https://documind-6kv5kn89t-documind-ai-s-projects.vercel.app
+🚀 **Live Demo:** https://documind-ai-roan.vercel.app/
 
 ---
 
