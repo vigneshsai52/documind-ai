@@ -21,38 +21,49 @@ def home():
     return "Server running with FREE Groq AI!"
 
 def analyze_with_ai(text):
-    """Send text to FREE Groq AI for analysis"""
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",  # UPDATED MODEL NAME
+            model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are a document analyzer. Provide: 1) Document type 2) 3 key points 3) Brief summary in simple English"},
-                {"role": "user", "content": f"Analyze this document:\n\n{text[:4000]}"}
+                {
+                    "role": "system",
+                    "content": "You are a document analyzer. Provide: 1) Document type 2) 3 key points 3) Brief summary in simple English"
+                },
+                {
+                    "role": "user",
+                    "content": f"Analyze this document:\n\n{text[:4000]}"
+                }
             ],
             temperature=0.5,
             max_tokens=500
         )
+
         return response.choices[0].message.content
+
     except Exception as e:
         return f"AI analysis error: {str(e)}"
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
     if 'file' not in request.files:
-        return jsonify({"error": "No file"}), 400
+        return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files['file']
 
-    if not file.filename.endswith('.pdf'):
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+
+    if not file.filename.lower().endswith('.pdf'):
         return jsonify({"error": "Only PDF files allowed"}), 400
 
     try:
         pdf = PdfReader(file)
+
         text = ""
         for page in pdf.pages:
             text += page.extract_text() or ""
 
-        if len(text) < 50:
+        if not text.strip():
             return jsonify({"error": "Could not extract text from PDF"}), 400
 
         ai_result = analyze_with_ai(text)
@@ -67,4 +78,5 @@ def analyze():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
