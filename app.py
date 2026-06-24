@@ -16,13 +16,16 @@ app = Flask(__name__)
 CORS(app)
 
 # --- DATABASE & AUTH SETUP ---
-MONGO_URI = "mongodb+srv://batting370_db_user:mydb123@vignesh.txnygj9.mongodb.net/?appName=vignesh"
-client_db = MongoClient(MONGO_URI)
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://batting370_db_user:mydb123@vignesh.txnygj9.mongodb.net/?appName=vignesh")
+
+# THIS LINE FIXES THE SSL HANDSHAKE ERROR ON RAILWAY:
+client_db = MongoClient(MONGO_URI, tlsAllowInvalidCertificates=True)
+
 db = client_db.contractscan_db 
 users_collection = db.users 
 history_collection = db.history 
 
-app.config["JWT_SECRET_KEY"] = "mySuperSecretKey123"
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "mySuperSecretKey123")
 jwt = JWTManager(app)
 # --------------------------------
 
