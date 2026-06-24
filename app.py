@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import pdfplumber
 from PyPDF2 import PdfReader
 import os
 import sqlite3
@@ -13,11 +14,12 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# --- SIMPLE SQLITE DATABASE (NO MORE MONGODB SSL ERRORS) ---
+# --- SIMPLE SQLITE DATABASE ---
 def init_db():
     conn = sqlite3.connect('contractscan.db')
     c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE, password TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY, email TEXT, filename TEXT, raw_text TEXT, analysis TEXT, date TEXT)')
     conn.commit()
     conn.close()
 
@@ -42,7 +44,7 @@ ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.txt'}
 
 @app.route('/')
 def home():
-    return "ContractScan API v3.0 - SQLite Edition - Bulletproof!"
+    return "ContractScan API v4.0 - History & Chat Edition!"
 
 # --- AUTH ROUTES ---
 @app.route('/signup', methods=['POST'])
@@ -87,11 +89,21 @@ def login():
 def extract_text(file, filename):
     ext = os.path.splitext(filename)[1].lower()
     if ext == '.pdf':
-        pdf = PdfReader(file)
-        text = ""
-        for page in pdf.pages:
-            text += page.extract_text() or ""
-        return text, len(pdf.pages)
+        try:
+            text = ""
+            with pdfplumber.open(file) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+            return text, len(pdf.pages)
+        except Exception:
+            # Fallback to PyPDF2 if pdfplumber fails on weird PDFs
+            pdf = PdfReader(file)
+            text = ""
+            for page in pdf.pages:
+                text += page.extract_text() or ""
+            return text, len(pdf.pages)
     elif ext in ('.docx', '.doc'):
         import docx
         doc = docx.Document(file)
@@ -170,8 +182,80 @@ def analyze():
         if pages is not None:
             result["pages"] = pages
 
+        # --- SAVE TO HISTORY ---
+        conn = sqlite3.connect('contractscan.db')
+        c = conn.cursor()
+        c.execute("INSERT INTO history (email, filename, raw_text, analysis, date) VALUES (?, ?, ?, ?, datetime('now'))", 
+                  (current_user_email, file.filename, text, ai_result))
+        conn.commit()
+        conn.close()
+        # -----------------------
+
         return jsonify(result)
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- HISTORY ROUTE ---
+@app.route('/history', methods=['GET'])
+@jwt_required()
+def get_history():
+    current_user_email = get_jwt_identity()
+    conn = sqlite3.connect('contractscan.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT id, filename, analysis, date FROM history WHERE email=? ORDER BY date DESC LIMIT 5", (current_user_email,))
+    rows = c.fetchall()
+    conn.close()
+    
+    histories = []
+    for row in rows:
+        histories.append({"id": row["id"], "filename": row["filename"], "analysis": row["analysis"], "date": row["date"]})
+        
+    return jsonify(histories), 200
+
+# --- CHAT ROUTE (Simulated RAG) ---
+@app.route('/chat', methods=['POST'])
+@jwt_required()
+def chat():
+    current_user_email = get_jwt_identity()
+    data = request.get_json()
+    history_id = data.get('history_id')
+    question = data.get('question')
+
+    if not history_id or not question:
+        return jsonify({"error": "Missing history_id or question"}), 400
+
+    conn = sqlite3.connect('contractscan.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT raw_text FROM history WHERE id=? AND email=?", (history_id, current_user_email))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "Document not found"}), 404
+
+    document_text = row["raw_text"]
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"You are a legal assistant. Answer the user's question based ONLY on the following document text:\n\n{document_text[:6000]}"
+                },
+                {
+                    "role": "user",
+                    "content": question
+                }
+            ],
+            temperature=0.3,
+            max_tokens=500
+        )
+        answer = response.choices[0].message.content
+        return jsonify({"answer": answer}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
